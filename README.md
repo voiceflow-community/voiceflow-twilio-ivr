@@ -162,4 +162,4 @@ Simply call your **Twilio number** and start interacting with your Assistant.
 
 We’ve also made a video to explain how to created, setup and use the Custom Action steps in your Assistant to handle DTMF, make a call or send an SMS.
 
-SOON
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=voiceflow-community_voiceflow-twilio-ivr&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=voiceflow-community_voiceflow-twilio-ivr)
