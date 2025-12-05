@@ -177,7 +177,17 @@ async function interact(caller, action) {
   return twiml.toString()
 }
 
+// Validates caller ID - E.164 format
+function isValidCaller(caller) {
+  // e.g. '+12345678901'
+  return typeof caller === 'string' && /^\+?[1-9]\d{1,14}$/.test(caller.trim());
+}
+
 async function deleteUserState(caller) {
+  // Validate the caller before making external requests
+  if (!isValidCaller(caller)) {
+    throw new Error('Invalid caller ID format');
+  }
   // call the Voiceflow API with the user's ID
   const request = {
     method: 'DELETE',
