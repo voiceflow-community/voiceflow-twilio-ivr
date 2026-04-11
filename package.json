@@ -27,8 +27,8 @@
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "axios": "^1.7.2",
-    "body-parser": "^1.20.2",
+    "axios": "1.15.0",
+    "body-parser": "1.20.3",
     "debug": "^4.3.4",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -36,5 +36,9 @@
     "fs": "^0.0.1-security",
     "morgan": "^1.10.0",
     "twilio": "^5.1.0"
+  },
+  "overrides": {
+    "path-to-regexp": "0.1.13",
+    "body-parser": "1.20.3"
   }
 }
