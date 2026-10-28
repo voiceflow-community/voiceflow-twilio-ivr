@@ -1,20 +1,58 @@
 require('dotenv').config()
-const fs = require('fs')
+// const fs = require('fs')
 const path = require('path')
+const fs = require('fs').promises
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
+const ffmpeg = require('fluent-ffmpeg')
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path)
+
+async function convertAudio(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .audioFrequency(16000)
+      .audioChannels(1)
+      .audioBitrate('64k')
+      .format('mp3')
+      .on('end', () => resolve(outputPath))
+      .on('error', (err) => reject(`Error converting audio: ${err.message}`))
+      .save(outputPath)
+  })
+}
+
+async function deleteFile(filePath) {
+  try {
+    await fs.unlink(filePath)
+    console.log(`Deleted file: ${filePath}`)
+  } catch (err) {
+    console.error(`Error deleting file: ${err.message}`)
+  }
+}
 
 const {
   VOICEFLOW_API_KEY,
   TWILIO_PHONE_NUMBER,
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
+  TWILIO_API_KEY,
+  TWILIO_API_SECRET,
 } = process.env
 
 const VoiceResponse = require('twilio').twiml.VoiceResponse
+// Using Auth Tokens
 const SMS = require('twilio')(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+// Using API Key instead of Auth Tokens
+/*
+const SMS = require('twilio')(TWILIO_API_KEY, TWILIO_API_SECRET, {
+  accountSid: TWILIO_ACCOUNT_SID,
+})
+*/
+
 const axios = require('axios')
 const VOICEFLOW_VERSION_ID = process.env.VOICEFLOW_VERSION_ID || 'development'
 const VOICEFLOW_PROJECT_ID = process.env.VOICEFLOW_PROJECT_ID || null
 let session = `${VOICEFLOW_VERSION_ID}.${createSession()}`
+const RESET_STATE = process.env.RESET_STATE.toLowerCase() || 'false'
 
 async function interact(caller, action) {
   const twiml = new VoiceResponse()
@@ -24,12 +62,18 @@ async function interact(caller, action) {
     url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(
       caller
     )}/interact`,
-    headers: { Authorization: VOICEFLOW_API_KEY, sessionid: session },
-    data: { action, config: { stopTypes: ['DTMF'] } },
+    headers: {
+      Authorization: VOICEFLOW_API_KEY,
+      sessionID: session,
+      versionID: VOICEFLOW_VERSION_ID,
+    },
+    data: {
+      action,
+      config: { tts: true, stripSSML: true, stopTypes: ['DTMF'] },
+    },
   }
   const response = await axios(request)
 
-  // janky first pass
   const endTurn = response.data.some((trace) =>
     ['CALL', 'end'].includes(trace.type)
   )
@@ -41,12 +85,14 @@ async function interact(caller, action) {
     ? twiml
     : twiml.gather({
         input: 'speech dtmf', // 'speech',
-        numDigits: 1,
+        numDigits: 4,
+        finishOnKey: '#',
+        hints: 'I need to check my account, Tico, Voiceflow, NiKo, yes',
         action: '/ivr/interaction',
         profanityFilter: false,
-        actionOnEmptyResult: false,
-        speechModel: 'phone_call', // 'experimental_utterances', 'experimental_conversations', ...
-        enhanced: false,
+        actionOnEmptyResult: true,
+        speechModel: 'experimental_utterances', // 'phone_call', 'numbers_and_commands','experimental_utterances', 'experimental_conversations', ...
+        enhanced: true,
         speechTimeout: 'auto',
         language: 'en-US',
         method: 'POST',
@@ -57,27 +103,34 @@ async function interact(caller, action) {
     switch (trace.type) {
       case 'text':
       case 'speak': {
-        if (trace.payload?.type == 'audio') {
+        if (trace.payload?.src) {
           if (trace.payload.src.startsWith('data:')) {
-            // Generate a unique temporary file name
+            const rawFileName = `raw-${Date.now()}.mp3`
             const tempFileName = `temp-${Date.now()}.mp3`
+            const rawFilePath = path.join(process.cwd(), 'tmp', rawFileName)
             const tempFilePath = path.join(process.cwd(), 'tmp', tempFileName)
 
-            // Create the 'tmp' directory if it doesn't exist
             const tempDir = path.join(process.cwd(), 'tmp')
-            if (!fs.existsSync(tempDir)) {
-              fs.mkdirSync(tempDir)
+            try {
+              await fs.mkdir(tempDir)
+            } catch (err) {
+              if (err.code !== 'EEXIST') {
+                throw err
+              }
             }
 
-            // Extract the base64-encoded audio data from the data URI
             const base64Data = trace.payload.src.split(',')[1]
+            await fs.writeFile(rawFilePath, base64Data, 'base64')
 
-            // Write the base64-encoded data to the temporary file
-            fs.writeFileSync(tempFilePath, base64Data, 'base64')
+            await convertAudio(rawFilePath, tempFilePath)
 
-            // Use the temporary file path with agent.play()
             const audioUrl = `${process.env.BASE_URL}/ivr/audio/${tempFileName}`
+
             agent.play(audioUrl)
+            setTimeout(async () => {
+              await deleteFile(tempFilePath)
+              await deleteFile(rawFilePath)
+            }, 30000)
           } else {
             agent.play(trace.payload.src)
           }
@@ -106,11 +159,10 @@ async function interact(caller, action) {
           .catch((error) => {
             console.error('Error sending message:', error)
           })
-        saveTranscript(caller)
         break
       }
       case 'end': {
-        saveTranscript(caller)
+        saveTranscript(caller, true)
         twiml.hangup()
         break
       }
@@ -118,7 +170,37 @@ async function interact(caller, action) {
       }
     }
   }
+  if (endTurn === false) {
+    saveTranscript(caller, false)
+  }
+
   return twiml.toString()
+}
+
+// Validates caller ID - E.164 format
+function isValidCaller(caller) {
+  // e.g. '+12345678901'
+  return typeof caller === 'string' && /^\+?[1-9]\d{1,14}$/.test(caller.trim());
+}
+
+async function deleteUserState(caller) {
+  // Validate the caller before making external requests
+  if (!isValidCaller(caller)) {
+    throw new Error('Invalid caller ID format');
+  }
+  // call the Voiceflow API with the user's ID
+  const request = {
+    method: 'DELETE',
+    url: `https://general-runtime.voiceflow.com/state/user/${encodeURI(
+      caller
+    )}`,
+    headers: {
+      Authorization: VOICEFLOW_API_KEY,
+      versionID: VOICEFLOW_VERSION_ID,
+    },
+  }
+  const response = await axios(request)
+  return response
 }
 
 exports.launch = async (called, caller) => {
@@ -128,13 +210,19 @@ exports.launch = async (called, caller) => {
 exports.interaction = async (called, caller, query = '', digit = null) => {
   let action = null
   if (digit) {
-    action = { type: `${digit}` }
+    // action = { type: `${digit}` } | Removing the need for a Custom Action
+    action = digit ? { type: 'text', payload: digit } : null
     console.log('Digit:', digit)
   } else {
     action = query.trim() ? { type: 'text', payload: query } : null
     console.log('Utterance:', query)
   }
+
   return interact(caller, action)
+}
+
+exports.deleteState = async (caller) => {
+  return deleteUserState(caller)
 }
 
 function createSession() {
@@ -158,7 +246,7 @@ function createSession() {
   return session_id
 }
 
-async function saveTranscript(username) {
+async function saveTranscript(username, isEnd) {
   if (VOICEFLOW_PROJECT_ID) {
     console.log('SAVE TRANSCRIPT')
     if (!username || username == '' || username == undefined) {
@@ -187,8 +275,22 @@ async function saveTranscript(username) {
     })
       .then(function (response) {
         console.log('Saved!')
-        session = `${process.env.VOICEFLOW_VERSION_ID}.${createSession()}`
+        if (isEnd == true) {
+          if (RESET_STATE === 'true') {
+            console.log('Resetting state')
+            deleteUserState(username)
+          }
+          session = `${process.env.VOICEFLOW_VERSION_ID}.${createSession()}`
+        }
       })
       .catch((err) => console.log(err))
+  } else {
+    if (isEnd == true) {
+      if (RESET_STATE === 'true') {
+        console.log('Resetting state')
+        deleteUserState(username)
+      }
+      session = `${process.env.VOICEFLOW_VERSION_ID}.${createSession()}`
+    }
   }
 }

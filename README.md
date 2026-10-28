@@ -2,7 +2,7 @@
 
 ### Use Voiceflow Dialog Manager API to run a Twilio IVR
 
-VR stands for Interactive Voice Response. It is a technology that enables a computer system to interact with callers through voice and DTMF (Dual-Tone Multi-Frequency) keypad inputs. IVR systems are widely used for automating telephony services, allowing customers to access information or navigate through menus without the need for a human operator.
+IVR stands for Interactive Voice Response. It is a technology that enables a computer system to interact with callers through voice and DTMF (Dual-Tone Multi-Frequency) keypad inputs. IVR systems are widely used for automating telephony services, allowing customers to access information or navigate through menus without the need for a human operator.
 
 With this integration you will be able to run your Voiceflow Assistant with Twilio Voice service.
 The main feature covered in the code are:
@@ -103,6 +103,9 @@ Voiceflow project version ID (only for transcripts, default to 'production')
 **VOICEFLOW_PROJECT_ID**
 Voiceflow project ID (only for transcripts, default to null)
 
+**RESET_STATE**
+Set this to TRUE if you want to reset state after each call.
+
 In the **Secrets tab**, you can click on Edit as JSON button and paste the following JSON (do not forget to update the keys values):
 
 ![CleanShot 2023-05-27 at 15.40.05.png](images/CleanShot_2023-05-27_at_15.40.05.png)
@@ -115,7 +118,8 @@ In the **Secrets tab**, you can click on Edit as JSON button and paste the follo
 	"VOICEFLOW_API_URL": "https://general-runtime.voiceflow.com",
 	"VOICEFLOW_API_KEY": "VF.DM.XXX",
 	"VOICEFLOW_VERSION_ID": "XXX",
-	"VOICEFLOW_PROJECT_ID": "XXX"
+	"VOICEFLOW_PROJECT_ID": "XXX",
+	"RESET_STATE": "FALSE"
 }
 
 ```
@@ -150,7 +154,7 @@ Do not forget to **save** your configuration
 ## Testing
 
 You’re now ready!
-You can import the Twilio_IVR_Demo-2023-11-21_15-55.vf file in Voiceflow to test it.
+You can import the Twilio_IVR_Demo-2024-05-31_11-10.vf file in Voiceflow to test it.
 Simply call your **Twilio number** and start interacting with your Assistant.
 
 
@@ -158,4 +162,4 @@ Simply call your **Twilio number** and start interacting with your Assistant.
 
 We’ve also made a video to explain how to created, setup and use the Custom Action steps in your Assistant to handle DTMF, make a call or send an SMS.
 
-SOON
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=voiceflow-community_voiceflow-twilio-ivr&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=voiceflow-community_voiceflow-twilio-ivr)
